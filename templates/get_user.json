@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "endpoint": "/users/${USERNAME}",
+  "headers": {
+    "Authorization": "${AUTH_TYPE} ${AUTH_TOKEN}",
+    "Accept": "${DEFAULT_ACCEPT}",
+    "X-GitHub-Api-Version": "2022-11-28"
+  },
+  "query_params": {},
+  "body": null,
+  "description": "Get GitHub user information"
+}
