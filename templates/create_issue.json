@@ -8,6 +8,11 @@
     "X-GitHub-Api-Version": "2022-11-28"
   },
   "query_params": {},
-  "body": "{\"title\":\"${ISSUE_TITLE}\",\"body\":\"${ISSUE_BODY}\",\"assignee\":\"${ASSIGNEE}\"}",
+  "body": {
+    "title": "${ISSUE_TITLE}",
+    "body": "${ISSUE_BODY}",
+    "assignee": "${ASSIGNEE}",
+    "snd_dt": "${to_day}"
+  },
   "description": "Create a new GitHub issue"
 }

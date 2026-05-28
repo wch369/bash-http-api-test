@@ -37,6 +37,8 @@ readonly NC='\033[0m'
 LOG_FILE="$LOGS_DIR/api-test.log"
 CURRENT_TIMESTAMP=$(date +%s)
 CURRENT_DATE=$(date '+%Y-%m-%d %H:%M:%S')
+TODAY=$(date '+%Y-%m-%d')
+SEQ="$(date '+%Y%m%d%H%M%S')$((RANDOM % 10000))"
 
 # 检查依赖
 check_dependencies() {
@@ -182,24 +184,26 @@ list_environments() {
 
 # 合并CLI变量
 merge_variables() {
-    local -n cmd_vars_ref="$1"
-    for key in "${!cmd_vars_ref[@]}"; do
-        export "$key"="${cmd_vars_ref[$key]}"
-        log_debug "Set variable: $key=${cmd_vars_ref[$key]}"
+    local array_name="$1"
+    eval "
+    for key in \"\${!${array_name}[@]}\"; do
+        export \"\$key\"=\"\${${array_name}[\$key]}\"
+        log_debug \"Set variable: \$key=\${${array_name}[\$key]}\"
     done
+    "
 }
 
 # 解析CLI变量
 parse_cli_variables() {
-    local -n cli_vars_ref="$1"
+    local array_name="$1"
     shift
-    
+
     while [[ $# -gt 0 ]]; do
         local arg="$1"
         if [[ "$arg" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
-            cli_vars_ref["$key"]="$value"
+            eval "$array_name[\"\$key\"]=\"\$value\""
             log_debug "Parsed CLI variable: $key=$value"
         else
             break
@@ -263,35 +267,37 @@ validate_variables() {
 # 提取模板变量
 extract_template_variables() {
     local content="$1"
-    local -n vars_ref="$2"
+    local array_name="$2"
     local var_pattern='\$\{([A-Za-z_][A-Za-z0-9_]*)\}'
 
     while [[ "$content" =~ $var_pattern ]]; do
         local var_name="${BASH_REMATCH[1]}"
-        vars_ref["$var_name"]=1
+        eval "$array_name[\"\$var_name\"]=1"
         content="${content//${BASH_REMATCH[0]}/}"
     done
 }
 
 # 交互式提示缺失变量
 prompt_for_variables() {
-    local -n required_vars_ref="$1"
-    local -n cli_vars_ref="$2"
+    local required_vars_name="$1"
+    local cli_vars_name="$2"
     local missing=()
-    
-    for var in "${!required_vars_ref[@]}"; do
-        if [[ -z "${!var:-}" ]] && [[ -z "${cli_vars_ref[$var]:-}" ]]; then
-            missing+=("$var")
+
+    eval "
+    for var in \"\${!${required_vars_name}[@]}\"; do
+        if [[ -z \"\${!var:-}\" ]] && [[ -z \"\${${cli_vars_name}[\$var]:-}\" ]]; then
+            missing+=(\"\$var\")
         fi
     done
-    
+    "
+
     if [[ ${#missing[@]} -eq 0 ]]; then
         return 0
     fi
-    
+
     log_warning "Missing variables detected: ${missing[*]}"
     echo -e "\n${YELLOW}Please provide values for the following variables:${NC}\n"
-    
+
     for var in "${missing[@]}"; do
         local prompt_text="$var"
         if [[ -n "${!var:-}" ]]; then
@@ -299,7 +305,7 @@ prompt_for_variables() {
         fi
         read -p "  $prompt_text = " value
         if [[ -n "$value" ]]; then
-            cli_vars_ref["$var"]="$value"
+            eval "$cli_vars_name[\"\$var\"]=\"\$value\""
         fi
     done
 }
@@ -392,10 +398,11 @@ show_template_variables() {
     done
 }
 
-# 构建curl命令数组 - 通过nameref返回，避免eval注入风险
+# 构建curl命令数组 - 通过全局变量CURL_CMD返回
+CURL_CMD=()
+
 build_curl_request() {
     local template_json="$1"
-    local -n curl_cmd_ref="$2"
 
     local method
     method=$(jq -r '.method // "GET"' <<< "$template_json")
@@ -406,7 +413,7 @@ build_curl_request() {
     local query_params
     query_params=$(jq -r '.query_params // {}' <<< "$template_json")
     local body
-    body=$(jq -r '.body // null' <<< "$template_json")
+    body=$(jq -rc '.body // null' <<< "$template_json")
 
     local full_url="${API_BASE_URL}${endpoint}"
 
@@ -422,22 +429,22 @@ build_curl_request() {
         full_url="${full_url}?${query_string}"
     fi
 
-    curl_cmd_ref=("curl" "-s" "-X" "$method")
+    CURL_CMD=("curl" "-s" "-X" "$method")
 
     # 添加头信息
     while IFS= read -r header_line; do
-        curl_cmd_ref+=("-H" "$header_line")
+        CURL_CMD+=("-H" "$header_line")
     done < <(jq -r 'to_entries[] | "\(.key): \(.value)"' <<< "$headers")
 
     # 添加请求体
     if [[ "$body" != "null" ]]; then
-        curl_cmd_ref+=("-d" "$body")
+        CURL_CMD+=("-d" "$body")
     fi
 
-    curl_cmd_ref+=("--connect-timeout" "${TIMEOUT:-30}")
-    [[ "${VERIFY_SSL:-true}" == "false" ]] && curl_cmd_ref+=("-k")
+    CURL_CMD+=("--connect-timeout" "${TIMEOUT:-30}")
+    [[ "${VERIFY_SSL:-true}" == "false" ]] && CURL_CMD+=("-k")
 
-    curl_cmd_ref+=("$full_url")
+    CURL_CMD+=("$full_url")
 }
 
 # 执行HTTP请求 - 优化版本
@@ -480,8 +487,7 @@ make_request() {
         return 1
     fi
 
-    local curl_cmd=()
-    build_curl_request "$template_json" curl_cmd
+    build_curl_request "$template_json"
 
     log_info "Executing request: $template_name"
     log_info "Environment: $env_name"
@@ -492,7 +498,7 @@ make_request() {
 
     # 直接执行数组，无需eval
     local response_and_code
-    response_and_code=$("${curl_cmd[@]}" -w '\n%{http_code}' 2>&1)
+    response_and_code=$("${CURL_CMD[@]}" -w '\n%{http_code}' 2>&1)
     local response
     response=$(echo "$response_and_code" | sed '$d')
     local http_code
@@ -554,9 +560,8 @@ dry_run() {
     log_info "Environment: $env_name"
     log_info "Generated curl command:"
 
-    local curl_cmd=()
-    build_curl_request "$template_json" curl_cmd
-    printf '  %q ' "${curl_cmd[@]}"
+    build_curl_request "$template_json"
+    printf '  %q ' "${CURL_CMD[@]}"
     echo
     
     log_info ""
