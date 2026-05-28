@@ -392,10 +392,11 @@ show_template_variables() {
     done
 }
 
-# 构建curl命令 - 优化版本
+# 构建curl命令数组 - 通过nameref返回，避免eval注入风险
 build_curl_request() {
     local template_json="$1"
-    
+    local -n curl_cmd_ref="$2"
+
     local method
     method=$(jq -r '.method // "GET"' <<< "$template_json")
     local endpoint
@@ -408,37 +409,35 @@ build_curl_request() {
     body=$(jq -r '.body // null' <<< "$template_json")
 
     local full_url="${API_BASE_URL}${endpoint}"
-    
+
     # 添加查询参数
     if [[ $(jq 'length' <<< "$query_params") -gt 0 ]]; then
         local query_parts=()
         while IFS= read -r line; do
             query_parts+=("$line")
         done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' <<< "$query_params")
-        
+
         local query_string
         query_string=$(IFS='&'; echo "${query_parts[*]}")
         full_url="${full_url}?${query_string}"
     fi
 
-    local curl_opts=("-s" "-X" "$method")
+    curl_cmd_ref=("curl" "-s" "-X" "$method")
 
     # 添加头信息
     while IFS= read -r header_line; do
-        curl_opts+=("-H" "$header_line")
+        curl_cmd_ref+=("-H" "$header_line")
     done < <(jq -r 'to_entries[] | "\(.key): \(.value)"' <<< "$headers")
 
     # 添加请求体
     if [[ "$body" != "null" ]]; then
-        curl_opts+=("-d" "$body")
+        curl_cmd_ref+=("-d" "$body")
     fi
 
-    curl_opts+=("--connect-timeout" "${TIMEOUT:-30}")
-    [[ "${VERIFY_SSL:-true}" == "false" ]] && curl_opts+=("-k")
-    
-    # 构建最终命令
-    local final_cmd=("curl" "${curl_opts[@]}" "$full_url")
-    printf '%q ' "${final_cmd[@]}"
+    curl_cmd_ref+=("--connect-timeout" "${TIMEOUT:-30}")
+    [[ "${VERIFY_SSL:-true}" == "false" ]] && curl_cmd_ref+=("-k")
+
+    curl_cmd_ref+=("$full_url")
 }
 
 # 执行HTTP请求 - 优化版本
@@ -481,8 +480,8 @@ make_request() {
         return 1
     fi
 
-    local curl_cmd_str
-    curl_cmd_str=$(build_curl_request "$template_json")
+    local curl_cmd=()
+    build_curl_request "$template_json" curl_cmd
 
     log_info "Executing request: $template_name"
     log_info "Environment: $env_name"
@@ -490,10 +489,10 @@ make_request() {
     log_info "Method: $(jq -r '.method // "GET"' <<< "$template_json")"
 
     local response_file="$RESULTS_DIR/${template_name}_${CURRENT_TIMESTAMP}.json"
-    
-    # 执行curl命令并捕获响应和状态码
+
+    # 直接执行数组，无需eval
     local response_and_code
-    response_and_code=$(eval "$curl_cmd_str -w '\n%{http_code}'" 2>&1)
+    response_and_code=$("${curl_cmd[@]}" -w '\n%{http_code}' 2>&1)
     local response
     response=$(echo "$response_and_code" | sed '$d')
     local http_code
@@ -554,10 +553,11 @@ dry_run() {
     log_info "DRY RUN: $template_name"
     log_info "Environment: $env_name"
     log_info "Generated curl command:"
-    
-    local curl_cmd_str
-    curl_cmd_str=$(build_curl_request "$template_json")
-    echo "  $curl_cmd_str"
+
+    local curl_cmd=()
+    build_curl_request "$template_json" curl_cmd
+    printf '  %q ' "${curl_cmd[@]}"
+    echo
     
     log_info ""
     log_info "Request details:"
