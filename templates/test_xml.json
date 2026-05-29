@@ -1,0 +1,13 @@
+{
+  "method": "POST",
+  "endpoint": "/api/endpoint",
+  "headers": {
+    "Authorization": "${AUTH_TYPE} ${AUTH_TOKEN}",
+    "Accept": "${DEFAULT_ACCEPT}",
+    "Content-Type": "application/xml"
+  },
+  "query_params": {},
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<request>\n  <name>${USERNAME}</name>\n</request>",
+  "USERNAME": "zhangsan",
+  "description": "Template for XML API requests"
+}

@@ -343,6 +343,39 @@ EOF
     log_success "Created template: $template_file"
 }
 
+# 创建XML模板
+create_xml_template() {
+    local template_name="$1"
+    local template_file="$TEMPLATES_DIR/${template_name}.json"
+
+    if [[ -f "$template_file" ]]; then
+        log_warning "Template file already exists: $template_file"
+        read -p "Overwrite? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Operation cancelled"
+            return 0
+        fi
+    fi
+
+    cat > "$template_file" << 'EOF'
+{
+  "method": "POST",
+  "endpoint": "/api/endpoint",
+  "headers": {
+    "Authorization": "${AUTH_TYPE} ${AUTH_TOKEN}",
+    "Accept": "${DEFAULT_ACCEPT}",
+    "Content-Type": "application/xml"
+  },
+  "query_params": {},
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<request>\n  <name>${USERNAME}</name>\n</request>",
+  "description": "Template for XML API requests"
+}
+EOF
+
+    log_success "Created XML template: $template_file"
+}
+
 # 加载模板
 load_template() {
     local template_name="$1"
@@ -372,6 +405,7 @@ resolve_includes() {
         local changed=false
         local new_content="$content"
 
+        # 匹配JSON结构级别的 @include: {"@include": "name"}
         while [[ "$new_content" =~ \{\"@include\":[[:space:]]*\"([^\"]+)\"\} ]]; do
             local include_name="${BASH_REMATCH[1]}"
             local partial_file="${partials_dir}/${include_name}.json"
@@ -384,6 +418,26 @@ resolve_includes() {
             local partial_content
             partial_content=$(cat "$partial_file")
             new_content="${new_content//${BASH_REMATCH[0]}/$partial_content}"
+            changed=true
+        done
+
+        # 匹配JSON字符串内的 @include: {\"@include\": \"name\"} (XML body等场景)
+        while [[ "$new_content" =~ \{\\\"@include\\\":[[:space:]]*\\\"([^\\\"]+)\\\"\} ]]; do
+            local include_name="${BASH_REMATCH[1]}"
+            local partial_file="${partials_dir}/${include_name}.json"
+
+            if [[ ! -f "$partial_file" ]]; then
+                log_error "Include partial not found: $include_name ($partial_file)"
+                return 1
+            fi
+
+            local partial_content json_partial
+            partial_content=$(cat "$partial_file")
+            # JSON-escape the partial for insertion into a string value
+            json_partial=$(jq -Rs '.' <<< "$partial_content")
+            json_partial="${json_partial:1:-1}"
+            local escaped_match="${BASH_REMATCH[0]//\\/\\\\}"
+            new_content="${new_content//$escaped_match/$json_partial}"
             changed=true
         done
 
@@ -450,7 +504,16 @@ build_curl_request() {
     local query_params
     query_params=$(jq -r '.query_params // {}' <<< "$template_json")
     local body
-    body=$(jq -rc '.body // null' <<< "$template_json")
+    local body_type
+    body_type=$(jq -r 'if .body == null then "null" else (.body | type) end' <<< "$template_json")
+
+    if [[ "$body_type" == "string" ]]; then
+        body=$(jq -r '.body' <<< "$template_json")
+    elif [[ "$body_type" == "object" || "$body_type" == "array" ]]; then
+        body=$(jq -c '.body' <<< "$template_json")
+    else
+        body="null"
+    fi
 
     local full_url="${API_BASE_URL}${endpoint}"
 
@@ -655,8 +718,9 @@ Commands:
     show-vars <template>              Show variables in template
     
     create-env <name>                 Create new environment file
-    create-template <name>            Create new request template
-    
+    create-template <name>            Create new JSON request template
+    create-xml-template <name>        Create new XML request template
+
     list-envs                         List available environments
     list-templates                    List available templates
     
@@ -749,6 +813,13 @@ main() {
                 return 1
             fi
             create_template "$2"
+            ;;
+        create-xml-template)
+            if [[ $# -lt 2 ]]; then
+                log_error "Usage: $0 create-xml-template <template-name>"
+                return 1
+            fi
+            create_xml_template "$2"
             ;;
         list-envs)
             list_environments

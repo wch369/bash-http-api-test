@@ -31,6 +31,17 @@ AUTH_TOKEN="ghp_your_token_here"
 
 ## Key Features
 
+### 📦 Request Body Formats
+Support for both JSON and XML request bodies:
+
+```bash
+# JSON body (object serialized automatically)
+./api-test.sh create-template json_api
+
+# XML body (raw string, set Content-Type accordingly)
+./api-test.sh create-xml-template xml_api
+```
+
 ### ✨ Command-Line Variable Input
 Override any variable directly from the command line without modifying files:
 
@@ -212,7 +223,13 @@ Create new environment file.
 ```bash
 ./api-test.sh create-template <name>
 ```
-Create new request template.
+Create new JSON request template.
+
+### Create XML Template
+```bash
+./api-test.sh create-xml-template <name>
+```
+Create new XML request template with `Content-Type: application/xml` preset.
 
 ### List Environments
 ```bash
@@ -245,6 +262,38 @@ Use `${VAR_NAME}` format:
   "body": "{\"title\":\"${ISSUE_TITLE}\"}"
 }
 ```
+
+### XML Body Templates
+For XML APIs, set the body as a JSON string and use `Content-Type: application/xml`:
+```json
+{
+  "method": "POST",
+  "endpoint": "/api/soap",
+  "headers": {
+    "Content-Type": "application/xml"
+  },
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<request>\n  <name>${USERNAME}</name>\n</request>"
+}
+```
+
+### Template Partials (@include)
+Reuse common template parts across multiple request templates. Place partial files in `templates/partials/`.
+
+**JSON structure level** — replace a JSON object/field:
+```json
+{
+  "headers": {"@include": "common_headers"}
+}
+```
+
+**Inside string values** (XML bodies, etc.) — embed partials within strings:
+```json
+{
+  "body": "<?xml version=\"1.0\"?>\n<request>{\"@include\": \"xml_body\"}\n</request>"
+}
+```
+
+Variables (`${VAR}`) inside partials are resolved normally.
 
 ### In Command Line
 Use `KEY=value` format:

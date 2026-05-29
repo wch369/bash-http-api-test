@@ -31,3 +31,9 @@ echo -e "\n=== Example 5: Search repos ==="
   SEARCH_QUERY="language:go stars:>10000" \
   SORT_BY="stars" \
   PER_PAGE="5"
+
+echo -e "\n=== Example 6: Create XML template ==="
+./api-test.sh create-xml-template xml_request
+
+echo -e "\n=== Example 7: Send XML request ==="
+./api-test.sh dry-run xml_request default USERNAME="testuser"
