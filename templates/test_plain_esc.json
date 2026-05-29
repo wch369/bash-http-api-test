@@ -1,0 +1,6 @@
+{
+  "method": "POST",
+  "endpoint": "/test",
+  "headers": {"Content-Type": "application/xml"},
+  "body": "<?xml version=\"1.0\"?>\n<root>{\"@include\": \"xml_body\"}\n</root>"
+}

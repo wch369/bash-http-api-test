@@ -1,4 +1,4 @@
-# Bash completion for api-test.sh
+# Bash completion for curlman
 # Source this file in your shell:
 #   source /home/wch/app/bash-http-api-test/completion.sh
 # Or add to ~/.bashrc:
@@ -30,5 +30,5 @@ _api_test_commands() {
     fi
 }
 
-complete -F _api_test_commands api-test.sh
-complete -F _api_test_commands ./api-test.sh
+complete -F _api_test_commands curlman
+complete -F _api_test_commands ./curlman

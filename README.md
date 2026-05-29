@@ -6,8 +6,8 @@ A comprehensive bash-based framework for testing HTTP APIs with curl, featuring 
 
 ### 1. Initialize Project
 ```bash
-chmod +x api-test.sh
-./api-test.sh init
+chmod +x curlman
+./curlman init
 ```
 
 ### 2. Configure Environment
@@ -19,12 +19,12 @@ AUTH_TOKEN="ghp_your_token_here"
 
 ### 3. Create a Template
 ```bash
-./api-test.sh create-template my_api_call
+./curlman create-template my_api_call
 ```
 
 ### 4. Execute Request with Command-Line Variables
 ```bash
-./api-test.sh send my_api_call default output.json \
+./curlman send my_api_call default output.json \
   USERNAME="octocat" \
   CUSTOM_VAR="custom_value"
 ```
@@ -36,10 +36,10 @@ Support for both JSON and XML request bodies:
 
 ```bash
 # JSON body (object serialized automatically)
-./api-test.sh create-template json_api
+./curlman create-template json_api
 
 # XML body (raw string, set Content-Type accordingly)
-./api-test.sh create-xml-template xml_api
+./curlman create-xml-template xml_api
 ```
 
 ### ✨ Command-Line Variable Input
@@ -47,12 +47,12 @@ Override any variable directly from the command line without modifying files:
 
 ```bash
 # Override template variables
-./api-test.sh send create_issue default issue.json \
+./curlman send create_issue default issue.json \
   REPO_OWNER=myorg REPO_NAME=myrepo \
   ISSUE_TITLE="New Feature" ISSUE_BODY="Description"
 
 # Override environment variables
-./api-test.sh send search_repos prod result.json \
+./curlman send search_repos prod result.json \
   AUTH_TOKEN="new-token-here" API_BASE_URL="https://api.example.com"
 ```
 
@@ -60,7 +60,9 @@ Override any variable directly from the command line without modifying files:
 1. **Command-line arguments** (highest priority) - `VAR=value`
 2. **Environment file variables** - `env/*.env`
 3. **System environment variables** - inherited from shell
-4. **Interactive prompts** (if running in terminal)
+4. **Template @include overrides** - inline values in `{"@include": "partial", "key": "value"}` or escaped XML element overrides
+5. **Partial file defaults** - hardcoded values in `templates/partials/*.json`
+6. **Interactive prompts** (lowest) - if running in terminal
 
 ### 🔄 Environment Management
 - Multiple environments: dev, staging, production
@@ -68,8 +70,8 @@ Override any variable directly from the command line without modifying files:
 - Variable override at runtime
 
 ```bash
-./api-test.sh create-env production
-./api-test.sh send get_users production output.json
+./curlman create-env production
+./curlman send get_users production output.json
 ```
 
 ### 📝 Template Management
@@ -91,19 +93,19 @@ Override any variable directly from the command line without modifying files:
 ### Example 1: Basic Request
 ```bash
 # Uses all variables from env/default.env
-./api-test.sh send get_user
+./curlman send get_user
 ```
 
 ### Example 2: Override Specific Variables
 ```bash
 # Keep environment defaults but override USERNAME
-./api-test.sh send get_user default result.json \
+./curlman send get_user default result.json \
   USERNAME="github"
 ```
 
 ### Example 3: Create Issue with Full Variable Override
 ```bash
-./api-test.sh send create_issue default issue.json \
+./curlman send create_issue default issue.json \
   REPO_OWNER="octocat" \
   REPO_NAME="Hello-World" \
   ISSUE_TITLE="Found a bug" \
@@ -113,7 +115,7 @@ Override any variable directly from the command line without modifying files:
 
 ### Example 4: Search with Query Parameters
 ```bash
-./api-test.sh send search_repos default result.json \
+./curlman send search_repos default result.json \
   SEARCH_QUERY="language:javascript stars:>5000" \
   SORT_BY="stars" \
   PER_PAGE="50"
@@ -122,7 +124,7 @@ Override any variable directly from the command line without modifying files:
 ### Example 5: Dry-run to Preview
 ```bash
 # See exactly what will be sent (no actual request)
-./api-test.sh dry-run create_issue default \
+./curlman dry-run create_issue default \
   REPO_OWNER="myorg" \
   REPO_NAME="myrepo" \
   ISSUE_TITLE="Test"
@@ -131,7 +133,7 @@ Override any variable directly from the command line without modifying files:
 ### Example 6: Show Template Variables
 ```bash
 # List all variables needed by template
-./api-test.sh show-vars create_issue
+./curlman show-vars create_issue
 ```
 
 Output:
@@ -151,7 +153,7 @@ Output:
 ### Example 7: Interactive Mode
 ```bash
 # Prompts for missing variables
-./api-test.sh send create_issue
+./curlman send create_issue
 
 # Output:
 # [WARNING] Missing variables detected: REPO_OWNER REPO_NAME ISSUE_TITLE
@@ -166,7 +168,7 @@ Output:
 ### Example 8: Non-Interactive (CI/CD)
 ```bash
 # Fails cleanly if variables missing
-./api-test.sh send create_issue < /dev/null \
+./curlman send create_issue < /dev/null \
   REPO_OWNER="org" REPO_NAME="repo" \
   ISSUE_TITLE="Test" ISSUE_BODY="Test"
 ```
@@ -174,13 +176,13 @@ Output:
 ### Example 9: Switch Environments
 ```bash
 # Test same template against different environments
-./api-test.sh send get_user dev result_dev.json
-./api-test.sh send get_user prod result_prod.json
+./curlman send get_user dev result_dev.json
+./curlman send get_user prod result_prod.json
 ```
 
 ### Example 10: Multiple Variables with Complex Values
 ```bash
-./api-test.sh send create_issue default result.json \
+./curlman send create_issue default result.json \
   REPO_OWNER="octocat" \
   REPO_NAME="Hello-World" \
   ISSUE_TITLE="Bug: Login not working" \
@@ -191,61 +193,61 @@ Output:
 
 ### Initialize
 ```bash
-./api-test.sh init
+./curlman init
 ```
 Creates default environment and template files.
 
 ### Make Request
 ```bash
-./api-test.sh send <template> [env] [output-file] [VAR=value ...]
+./curlman send <template> [env] [output-file] [VAR=value ...]
 ```
 Execute API request with optional variable overrides.
 
 ### Dry Run
 ```bash
-./api-test.sh dry-run <template> [env] [VAR=value ...]
+./curlman dry-run <template> [env] [VAR=value ...]
 ```
 Preview request without executing.
 
 ### Show Variables
 ```bash
-./api-test.sh show-vars <template>
+./curlman show-vars <template>
 ```
 List variables needed by template.
 
 ### Create Environment
 ```bash
-./api-test.sh create-env <name>
+./curlman create-env <name>
 ```
 Create new environment file.
 
 ### Create Template
 ```bash
-./api-test.sh create-template <name>
+./curlman create-template <name>
 ```
 Create new JSON request template.
 
 ### Create XML Template
 ```bash
-./api-test.sh create-xml-template <name>
+./curlman create-xml-template <name>
 ```
 Create new XML request template with `Content-Type: application/xml` preset.
 
 ### List Environments
 ```bash
-./api-test.sh list-envs
+./curlman list-envs
 ```
 Show available environments.
 
 ### List Templates
 ```bash
-./api-test.sh list-templates
+./curlman list-templates
 ```
 Show available templates.
 
 ### Help
 ```bash
-./api-test.sh help
+./curlman help
 ```
 Display help information.
 
@@ -279,26 +281,48 @@ For XML APIs, set the body as a JSON string and use `Content-Type: application/x
 ### Template Partials (@include)
 Reuse common template parts across multiple request templates. Place partial files in `templates/partials/`.
 
-**JSON structure level** — replace a JSON object/field:
+**JSON structure level** — replace a JSON object/field (supports override keys):
+
 ```json
 {
   "headers": {"@include": "common_headers"}
 }
 ```
 
-**Inside string values** (XML bodies, etc.) — embed partials within strings:
+Override specific fields from the partial inline:
+
+```json
+{
+  "headers": {"@include": "common_headers", "Accept": "application/xml"}
+}
+```
+
+The `Accept` value replaces the partial's value; all other fields from the partial are preserved. Nested objects deep-merge.
+
+**Inside string values** (XML bodies, etc.) — embed partials within strings, with optional XML element overrides:
+
 ```json
 {
   "body": "<?xml version=\"1.0\"?>\n<request>{\"@include\": \"xml_body\"}\n</request>"
 }
 ```
 
-Variables (`${VAR}`) inside partials are resolved normally.
+Override specific XML elements inline:
+
+```json
+{
+  "body": "<?xml version=\"1.0\"?>\n<request>{\"@include\": \"xml_body\", \"name\": \"hardcoded\"}\n</request>"
+}
+```
+
+This replaces `<name>...</name>` in the partial with `<name>hardcoded</name>`.
+
+Variables (`${VAR}`) inside partials are resolved normally after include processing.
 
 ### In Command Line
 Use `KEY=value` format:
 ```bash
-./api-test.sh send template env output.json KEY=value KEY2="value with spaces"
+./curlman send template env output.json KEY=value KEY2="value with spaces"
 ```
 
 ### In Environment Files
@@ -313,7 +337,7 @@ USERNAME="octocat"
 
 ```
 .
-├── api-test.sh              # Main script
+├── curlman              # Main script
 ├── env/                     # Environment configurations
 │   ├── default.env
 │   └── prod.env
@@ -351,15 +375,15 @@ API_BASE_URL="https://api.github.com"
 
 4. **Template Naming**: Use descriptive names
 ```bash
-./api-test.sh create-template create_github_issue
-./api-test.sh create-template list_github_repos
+./curlman create-template create_github_issue
+./curlman create-template list_github_repos
 ```
 
 5. **Dry-Run Before Execute**: Always preview complex requests
 ```bash
-./api-test.sh dry-run create_issue default \
+./curlman dry-run create_issue default \
   REPO_OWNER="org" REPO_NAME="repo"
-./api-test.sh send create_issue default issue.json \
+./curlman send create_issue default issue.json \
   REPO_OWNER="org" REPO_NAME="repo"
 ```
 
@@ -370,13 +394,13 @@ If you get missing variable errors:
 
 ```bash
 # 1. Check template variables
-./api-test.sh show-vars template_name
+./curlman show-vars template_name
 
 # 2. Verify environment file
 cat env/default.env
 
 # 3. Provide variables on command-line
-./api-test.sh send template default VAR=value
+./curlman send template default VAR=value
 ```
 
 ### SSL Certificate Errors
@@ -407,10 +431,10 @@ echo 'PRETTY_JSON="true"' >> env/default.env
 set -e
 
 # Run tests in non-interactive mode
-./api-test.sh send get_user prod < /dev/null \
+./curlman send get_user prod < /dev/null \
   USERNAME="test-user"
 
-./api-test.sh send create_issue prod issue.json \
+./curlman send create_issue prod issue.json \
   REPO_OWNER="org" REPO_NAME="repo" \
   ISSUE_TITLE="CI/CD Test"
 ```
@@ -418,9 +442,9 @@ set -e
 ### Custom Variable Sets
 Create environment-specific files:
 ```bash
-./api-test.sh create-env staging
+./curlman create-env staging
 # Edit env/staging.env with staging-specific values
-./api-test.sh send template staging result.json
+./curlman send template staging result.json
 ```
 
 ### Batch Testing
@@ -428,7 +452,7 @@ Create environment-specific files:
 #!/bin/bash
 
 for user in user1 user2 user3; do
-  ./api-test.sh send get_user default "result_${user}.json" \
+  ./curlman send get_user default "result_${user}.json" \
     USERNAME="$user"
 done
 ```

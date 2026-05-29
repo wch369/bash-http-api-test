@@ -1,4 +1,5 @@
   <user>
     <name>${USERNAME}</name>
-    <role>admin</role>
+    <role>${ROLE}</role>
+    <email>${EMAIL}</email>
   </user>

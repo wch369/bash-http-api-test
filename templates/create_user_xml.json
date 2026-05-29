@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "endpoint": "/api/v2/users",
+  "headers": {
+    "Authorization": "${AUTH_TYPE} ${AUTH_TOKEN}",
+    "Accept": "application/xml",
+    "Content-Type": "application/xml"
+  },
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Envelope>\n  <Header>\n    <Timestamp>${TODAY}</Timestamp>\n    <Source>curlman</Source>\n  </Header>\n  <Body>\n    <CreateUser>\n{\"@include\": \"xml_body\"}\n    </CreateUser>\n  </Body>\n</Envelope>",
+  "description": "Create user via XML API"
+}
