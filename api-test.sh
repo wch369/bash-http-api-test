@@ -362,6 +362,42 @@ load_template() {
     cat "$template_file"
 }
 
+# 解析模板中的 @include 指令
+resolve_includes() {
+    local content="$1"
+    local partials_dir="${TEMPLATES_DIR}/partials"
+    local max_iterations=10
+
+    while ((max_iterations > 0)); do
+        local changed=false
+        local new_content="$content"
+
+        while [[ "$new_content" =~ \{\"@include\":[[:space:]]*\"([^\"]+)\"\} ]]; do
+            local include_name="${BASH_REMATCH[1]}"
+            local partial_file="${partials_dir}/${include_name}.json"
+
+            if [[ ! -f "$partial_file" ]]; then
+                log_error "Include partial not found: $include_name ($partial_file)"
+                return 1
+            fi
+
+            local partial_content
+            partial_content=$(cat "$partial_file")
+            new_content="${new_content//${BASH_REMATCH[0]}/$partial_content}"
+            changed=true
+        done
+
+        if [[ "$changed" == "false" ]]; then
+            break
+        fi
+
+        content="$new_content"
+        ((max_iterations--))
+    done
+
+    echo "$content"
+}
+
 # 列出模板
 list_templates() {
     log_info "Available templates:"
@@ -382,7 +418,8 @@ show_template_variables() {
     local template_name="$1"
     local template_json
     template_json=$(load_template "$template_name") || return 1
-    
+    template_json=$(resolve_includes "$template_json") || return 1
+
     declare -A vars
     extract_template_variables "$template_json" vars
     
@@ -466,6 +503,7 @@ make_request() {
 
     local template_json
     template_json=$(load_template "$template_name") || return 1
+    template_json=$(resolve_includes "$template_json") || return 1
 
     declare -A required_vars
     extract_template_variables "$template_json" required_vars
@@ -475,7 +513,7 @@ make_request() {
         merge_variables cli_vars
     else
         if ! validate_variables "$template_json"; then
-            log_error "Missing required variables. Use: $SCRIPT_NAME make-request <template> [env] [output-file] VAR=value VAR2=value2"
+            log_error "Missing required variables. Use: $SCRIPT_NAME send <template> [env] [output-file] VAR=value VAR2=value2"
             return 1
         fi
     fi
@@ -554,6 +592,7 @@ dry_run() {
 
     local template_json
     template_json=$(load_template "$template_name") || return 1
+    template_json=$(resolve_includes "$template_json") || return 1
     template_json=$(replace_variables_recursive "$template_json")
 
     log_info "DRY RUN: $template_name"
@@ -591,7 +630,7 @@ init_project() {
     log_info "Next steps:"
     log_info "1. Edit env/default.env with your API settings"
     log_info "2. Create request templates in templates/ directory"
-    log_info "3. Run: ./$SCRIPT_NAME make-request <template-name> [env-name] [output-file] [VAR=value ...]"
+    log_info "3. Run: ./$SCRIPT_NAME send <template-name> [env-name] [output-file] [VAR=value ...]"
 }
 
 # 显示帮助
@@ -604,7 +643,7 @@ Usage: ./$SCRIPT_NAME <command> [options]
 Commands:
     init                              Initialize project structure
     
-    make-request <template>           Execute API request from template
+    send <template>           Execute API request from template
                  [env]                (default: "default")
                  [output-file]        (optional: save response)
                  [VAR=value ...]      (optional: override variables)
@@ -627,18 +666,18 @@ Commands:
 Examples:
 
   1. Basic request (uses environment variables):
-     ./$SCRIPT_NAME make-request get_users
+     ./$SCRIPT_NAME send get_users
 
   2. Request with output file:
-     ./$SCRIPT_NAME make-request get_users default output.json
+     ./$SCRIPT_NAME send get_users default output.json
 
   3. Request with command-line variables:
-     ./$SCRIPT_NAME make-request create_issue default issue.json \\
+     ./$SCRIPT_NAME send create_issue default issue.json \\
        REPO_OWNER=myorg REPO_NAME=myrepo \\
        ISSUE_TITLE="New Feature" ISSUE_BODY="Description"
 
   4. Override environment variables:
-     ./$SCRIPT_NAME make-request search_repos prod result.json \\
+     ./$SCRIPT_NAME send search_repos prod result.json \\
        API_BASE_URL="https://api.github.com" \\
        AUTH_TOKEN="ghp_xxxxxxxxxxxx"
 
@@ -650,10 +689,10 @@ Examples:
        REPO_OWNER=myorg REPO_NAME=myrepo
 
   7. Interactive mode (prompts for missing variables):
-     ./$SCRIPT_NAME make-request create_issue
+     ./$SCRIPT_NAME send create_issue
 
   8. Non-interactive mode (fails if variables missing):
-     ./$SCRIPT_NAME make-request create_issue < /dev/null
+     ./$SCRIPT_NAME send create_issue < /dev/null
 
 EOF
 }
@@ -674,9 +713,9 @@ main() {
         init)
             init_project
             ;;
-        make-request)
+        send)
             if [[ $# -lt 2 ]]; then
-                log_error "Usage: $0 make-request <template-name> [env-name] [output-file] [VAR=value ...]"
+                log_error "Usage: $0 send <template-name> [env-name] [output-file] [VAR=value ...]"
                 return 1
             fi
             shift

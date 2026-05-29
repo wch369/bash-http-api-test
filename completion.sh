@@ -8,8 +8,8 @@ _api_test_commands() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="init make-request dry-run show-vars create-env create-template list-envs list-templates version help"
-    local template_cmds="make-request dry-run show-vars"
+    local commands="init send dry-run show-vars create-env create-template list-envs list-templates version help"
+    local template_cmds="send dry-run show-vars"
 
     if [[ $cword -eq 1 ]]; then
         COMPREPLY=($(compgen -W "$commands" -- "$cur"))
