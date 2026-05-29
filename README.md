@@ -24,7 +24,7 @@ AUTH_TOKEN="ghp_your_token_here"
 
 ### 4. Execute Request with Command-Line Variables
 ```bash
-./api-test.sh make-request my_api_call default output.json \
+./api-test.sh send my_api_call default output.json \
   USERNAME="octocat" \
   CUSTOM_VAR="custom_value"
 ```
@@ -47,12 +47,12 @@ Override any variable directly from the command line without modifying files:
 
 ```bash
 # Override template variables
-./api-test.sh make-request create_issue default issue.json \
+./api-test.sh send create_issue default issue.json \
   REPO_OWNER=myorg REPO_NAME=myrepo \
   ISSUE_TITLE="New Feature" ISSUE_BODY="Description"
 
 # Override environment variables
-./api-test.sh make-request search_repos prod result.json \
+./api-test.sh send search_repos prod result.json \
   AUTH_TOKEN="new-token-here" API_BASE_URL="https://api.example.com"
 ```
 
@@ -69,7 +69,7 @@ Override any variable directly from the command line without modifying files:
 
 ```bash
 ./api-test.sh create-env production
-./api-test.sh make-request get_users production output.json
+./api-test.sh send get_users production output.json
 ```
 
 ### 📝 Template Management
@@ -91,19 +91,19 @@ Override any variable directly from the command line without modifying files:
 ### Example 1: Basic Request
 ```bash
 # Uses all variables from env/default.env
-./api-test.sh make-request get_user
+./api-test.sh send get_user
 ```
 
 ### Example 2: Override Specific Variables
 ```bash
 # Keep environment defaults but override USERNAME
-./api-test.sh make-request get_user default result.json \
+./api-test.sh send get_user default result.json \
   USERNAME="github"
 ```
 
 ### Example 3: Create Issue with Full Variable Override
 ```bash
-./api-test.sh make-request create_issue default issue.json \
+./api-test.sh send create_issue default issue.json \
   REPO_OWNER="octocat" \
   REPO_NAME="Hello-World" \
   ISSUE_TITLE="Found a bug" \
@@ -113,7 +113,7 @@ Override any variable directly from the command line without modifying files:
 
 ### Example 4: Search with Query Parameters
 ```bash
-./api-test.sh make-request search_repos default result.json \
+./api-test.sh send search_repos default result.json \
   SEARCH_QUERY="language:javascript stars:>5000" \
   SORT_BY="stars" \
   PER_PAGE="50"
@@ -151,7 +151,7 @@ Output:
 ### Example 7: Interactive Mode
 ```bash
 # Prompts for missing variables
-./api-test.sh make-request create_issue
+./api-test.sh send create_issue
 
 # Output:
 # [WARNING] Missing variables detected: REPO_OWNER REPO_NAME ISSUE_TITLE
@@ -166,7 +166,7 @@ Output:
 ### Example 8: Non-Interactive (CI/CD)
 ```bash
 # Fails cleanly if variables missing
-./api-test.sh make-request create_issue < /dev/null \
+./api-test.sh send create_issue < /dev/null \
   REPO_OWNER="org" REPO_NAME="repo" \
   ISSUE_TITLE="Test" ISSUE_BODY="Test"
 ```
@@ -174,13 +174,13 @@ Output:
 ### Example 9: Switch Environments
 ```bash
 # Test same template against different environments
-./api-test.sh make-request get_user dev result_dev.json
-./api-test.sh make-request get_user prod result_prod.json
+./api-test.sh send get_user dev result_dev.json
+./api-test.sh send get_user prod result_prod.json
 ```
 
 ### Example 10: Multiple Variables with Complex Values
 ```bash
-./api-test.sh make-request create_issue default result.json \
+./api-test.sh send create_issue default result.json \
   REPO_OWNER="octocat" \
   REPO_NAME="Hello-World" \
   ISSUE_TITLE="Bug: Login not working" \
@@ -197,7 +197,7 @@ Creates default environment and template files.
 
 ### Make Request
 ```bash
-./api-test.sh make-request <template> [env] [output-file] [VAR=value ...]
+./api-test.sh send <template> [env] [output-file] [VAR=value ...]
 ```
 Execute API request with optional variable overrides.
 
@@ -298,7 +298,7 @@ Variables (`${VAR}`) inside partials are resolved normally.
 ### In Command Line
 Use `KEY=value` format:
 ```bash
-./api-test.sh make-request template env output.json KEY=value KEY2="value with spaces"
+./api-test.sh send template env output.json KEY=value KEY2="value with spaces"
 ```
 
 ### In Environment Files
@@ -359,7 +359,7 @@ API_BASE_URL="https://api.github.com"
 ```bash
 ./api-test.sh dry-run create_issue default \
   REPO_OWNER="org" REPO_NAME="repo"
-./api-test.sh make-request create_issue default issue.json \
+./api-test.sh send create_issue default issue.json \
   REPO_OWNER="org" REPO_NAME="repo"
 ```
 
@@ -376,7 +376,7 @@ If you get missing variable errors:
 cat env/default.env
 
 # 3. Provide variables on command-line
-./api-test.sh make-request template default VAR=value
+./api-test.sh send template default VAR=value
 ```
 
 ### SSL Certificate Errors
@@ -407,10 +407,10 @@ echo 'PRETTY_JSON="true"' >> env/default.env
 set -e
 
 # Run tests in non-interactive mode
-./api-test.sh make-request get_user prod < /dev/null \
+./api-test.sh send get_user prod < /dev/null \
   USERNAME="test-user"
 
-./api-test.sh make-request create_issue prod issue.json \
+./api-test.sh send create_issue prod issue.json \
   REPO_OWNER="org" REPO_NAME="repo" \
   ISSUE_TITLE="CI/CD Test"
 ```
@@ -420,7 +420,7 @@ Create environment-specific files:
 ```bash
 ./api-test.sh create-env staging
 # Edit env/staging.env with staging-specific values
-./api-test.sh make-request template staging result.json
+./api-test.sh send template staging result.json
 ```
 
 ### Batch Testing
@@ -428,7 +428,7 @@ Create environment-specific files:
 #!/bin/bash
 
 for user in user1 user2 user3; do
-  ./api-test.sh make-request get_user default "result_${user}.json" \
+  ./api-test.sh send get_user default "result_${user}.json" \
     USERNAME="$user"
 done
 ```
