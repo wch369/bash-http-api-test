@@ -76,6 +76,7 @@ Override any variable directly from the command line without modifying files:
 
 ### 📝 Template Management
 - JSON-based request templates
+- **Module support**: Organize templates into subdirectories (`module/name` syntax)
 - Variable substitution with `${VAR_NAME}` syntax
 - Headers, query parameters, and body support
 - Request descriptions
@@ -189,6 +190,25 @@ Output:
   ISSUE_BODY="Login fails on Chrome. Steps to reproduce: 1. Open site 2. Click login"
 ```
 
+### Example 11: Module-Based Templates
+```bash
+# Create a module template
+./curlman create-template etcp/get_users
+
+# Create module-scoped partial
+mkdir -p templates/partials/etcp
+echo '{"headers":{"Authorization":"Bearer ${AUTH_TOKEN}"}}' > templates/partials/etcp/common.json
+
+# Send request using module template
+./curlman send etcp/get_users default result.json USERNAME="octocat"
+
+# Dry-run to preview module request
+./curlman dry-run etcp/get_users default USERNAME="octocat"
+
+# List templates (shows module grouping)
+./curlman list-templates
+```
+
 ## Command Reference
 
 ### Initialize
@@ -201,13 +221,13 @@ Creates default environment and template files.
 ```bash
 ./curlman send <template> [env] [output-file] [VAR=value ...]
 ```
-Execute API request with optional variable overrides.
+Execute API request with optional variable overrides. `<template>` supports `module/name` syntax.
 
 ### Dry Run
 ```bash
 ./curlman dry-run <template> [env] [VAR=value ...]
 ```
-Preview request without executing.
+Preview request without executing. `<template>` supports `module/name` syntax.
 
 ### Show Variables
 ```bash
@@ -225,13 +245,13 @@ Create new environment file.
 ```bash
 ./curlman create-template <name>
 ```
-Create new JSON request template.
+Create new JSON request template. Supports `module/name` syntax for module organization.
 
 ### Create XML Template
 ```bash
 ./curlman create-xml-template <name>
 ```
-Create new XML request template with `Content-Type: application/xml` preset.
+Create new XML request template with `Content-Type: application/xml` preset. Supports `module/name` syntax.
 
 ### List Environments
 ```bash
@@ -319,6 +339,55 @@ This replaces `<name>...</name>` in the partial with `<name>hardcoded</name>`.
 
 Variables (`${VAR}`) inside partials are resolved normally after include processing.
 
+### 📁 Module Organization
+
+Templates and partials can be grouped into modules for better organization in larger projects.
+
+#### Module Templates
+
+Use `module/name` syntax to reference templates in subdirectories:
+
+```bash
+# Create a module template
+./curlman create-template etcp/get_users
+
+# Use a module template
+./curlman send etcp/get_users
+
+# List templates (grouped by module)
+./curlman list-templates
+```
+
+Output:
+```
+[INFO] Available templates:
+  get_user                     # flat template
+  [etcp]                       # module: etcp
+    etcp/get_users
+    etcp/create_issue
+  [ibps]                       # module: ibps
+    ibps/search
+```
+
+#### Module-Scoped Partials
+
+Partials follow a two-tier lookup: module-scoped first, then shared fallback. Given a template `etcp/get_users` that includes `"@include": "headers"`:
+
+```
+1. templates/partials/etcp/headers.json   ← module-scoped (checked first)
+2. templates/partials/headers.json         ← shared (fallback)
+```
+
+This allows modules to override shared partials with module-specific versions. Partials can also use explicit module prefixes to bypass the fallback:
+
+```json
+{
+  "@include": "ibps/headers"   // always resolves to partials/ibps/headers.json
+}
+```
+
+Module-scoped partials support the same override semantics as shared partials (JSON override keys and XML element overrides).
+
 ### In Command Line
 Use `KEY=value` format:
 ```bash
@@ -342,9 +411,21 @@ USERNAME="octocat"
 │   ├── default.env
 │   └── prod.env
 ├── templates/               # Request templates
-│   ├── create_issue.json
+│   ├── create_issue.json    # Flat templates (no module)
 │   ├── search_repos.json
-│   └── get_user.json
+│   ├── get_user.json
+│   ├── etcp/                # Module: etcp
+│   │   ├── get_users.json
+│   │   └── create_issue.json
+│   ├── ibps/                # Module: ibps
+│   │   └── search.json
+│   └── partials/            # Reusable template parts
+│       ├── common_meta.json # Shared partials (all templates)
+│       ├── xml_body.json
+│       ├── etcp/            # Module-scoped partials (etcp only)
+│       │   └── headers.json
+│       └── ibps/            # Module-scoped partials (ibps only)
+│           └── auth.json
 ├── logs/                    # Request logs
 │   └── api-test.log
 ├── results/                 # Response files
@@ -373,10 +454,15 @@ REPO_OWNER="myorg"
 API_BASE_URL="https://api.github.com"
 ```
 
-4. **Template Naming**: Use descriptive names
+4. **Template Naming**: Use descriptive names, organize with modules
 ```bash
+# Flat templates for simple projects
 ./curlman create-template create_github_issue
 ./curlman create-template list_github_repos
+
+# Module templates for larger projects
+./curlman create-template etcp/get_users
+./curlman create-template ibps/search_records
 ```
 
 5. **Dry-Run Before Execute**: Always preview complex requests

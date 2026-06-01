@@ -37,3 +37,12 @@ echo -e "\n=== Example 6: Create XML template ==="
 
 echo -e "\n=== Example 7: Send XML request ==="
 ./curlman dry-run xml_request default USERNAME="testuser"
+
+echo -e "\n=== Example 8: Module-based template ==="
+./curlman create-template etcp/get_users
+
+echo -e "\n=== Example 9: Module template dry-run ==="
+./curlman dry-run etcp/get_users default USERNAME="testuser"
+
+echo -e "\n=== Example 10: List templates (shows module grouping) ==="
+./curlman list-templates

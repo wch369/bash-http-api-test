@@ -39,6 +39,7 @@ CURRENT_TIMESTAMP=$(date +%s)
 CURRENT_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 TODAY=$(date '+%Y-%m-%d')
 SEQ="$(date '+%Y%m%d%H%M%S')$((RANDOM % 10000))"
+CURRENT_MODULE=""
 
 # 检查依赖
 check_dependencies() {
@@ -310,10 +311,18 @@ prompt_for_variables() {
     done
 }
 
-# 创建模板
+# 创建模板 (supports module/name syntax)
 create_template() {
     local template_name="$1"
-    local template_file="$TEMPLATES_DIR/${template_name}.json"
+    local template_file
+
+    if [[ "$template_name" == */* ]]; then
+        local module="${template_name%%/*}"
+        mkdir -p "$TEMPLATES_DIR/$module"
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    else
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    fi
 
     if [[ -f "$template_file" ]]; then
         log_warning "Template file already exists: $template_file"
@@ -343,10 +352,18 @@ EOF
     log_success "Created template: $template_file"
 }
 
-# 创建XML模板
+# 创建XML模板 (supports module/name syntax)
 create_xml_template() {
     local template_name="$1"
-    local template_file="$TEMPLATES_DIR/${template_name}.json"
+    local template_file
+
+    if [[ "$template_name" == */* ]]; then
+        local module="${template_name%%/*}"
+        mkdir -p "$TEMPLATES_DIR/$module"
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    else
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    fi
 
     if [[ -f "$template_file" ]]; then
         log_warning "Template file already exists: $template_file"
@@ -376,34 +393,51 @@ EOF
     log_success "Created XML template: $template_file"
 }
 
-# 加载模板
+# 加载模板 (supports module/name syntax)
 load_template() {
     local template_name="$1"
-    local template_file="$TEMPLATES_DIR/${template_name}.json"
+    local template_file
+
+    if [[ "$template_name" == */* ]]; then
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    else
+        template_file="$TEMPLATES_DIR/${template_name}.json"
+    fi
 
     if [[ ! -f "$template_file" ]]; then
         log_error "Template not found: $template_file"
         return 1
     fi
-    
+
     # 验证JSON格式
     if ! jq empty "$template_file" 2>/dev/null; then
         log_error "Invalid JSON format in template: $template_file"
         return 1
     fi
-    
+
     cat "$template_file"
 }
 
-# 解析模板中的 @include 指令
+# 从模板名解析模块 (sets CURRENT_MODULE in caller's scope)
+resolve_module() {
+    local template_name="$1"
+    if [[ "$template_name" == */* ]]; then
+        CURRENT_MODULE="${template_name%%/*}"
+    else
+        CURRENT_MODULE=""
+    fi
+}
+
+# 解析模板中的 @include 指令 (supports module-scoped partials)
 resolve_includes() {
     local content="$1"
     local partials_dir="${TEMPLATES_DIR}/partials"
     local max_iterations=10
 
-    # 构建所有partial的JSON索引: {"name1": {...}, "name2": {...}}
+    # 构建partials JSON索引: {"name1": {...}, "mod/name2": {...}}
     local partials_json="{}"
     if [[ -d "$partials_dir" ]]; then
+        # Shared partials (partials/*.json)
         for pf in "$partials_dir"/*.json; do
             if [[ -f "$pf" ]]; then
                 local pname pcontent
@@ -415,19 +449,36 @@ resolve_includes() {
                 fi
             fi
         done
+        # Module-scoped partials (partials/<module>/*.json)
+        for pf in "$partials_dir"/*/*.json; do
+            if [[ -f "$pf" ]]; then
+                local pdir pname pcontent
+                pdir=$(basename "$(dirname "$pf")")
+                pname=$(basename "$pf" .json)
+                pcontent=$(cat "$pf")
+                if jq empty <<<"$pcontent" 2>/dev/null; then
+                    partials_json=$(jq --arg n "$pdir/$pname" --argjson c "$pcontent" \
+                        '. + {($n): $c}' <<<"$partials_json")
+                fi
+            fi
+        done
     fi
 
     while ((max_iterations > 0)); do
         local changed=false
         local new_content="$content"
 
-        # jq递归处理JSON结构级别的 @include (支持 override keys)
+        # jq递归处理JSON结构级别的 @include (supports module-scoped override keys)
         if echo "$new_content" | grep -q '"@include"'; then
-            new_content=$(jq --argjson partials "$partials_json" '
+            new_content=$(jq --arg mod "$CURRENT_MODULE" --argjson partials "$partials_json" '
               def resolve:
                 if type == "object" then
                   if has("@include") then
-                    ($partials[.["@include"]] // {}) * del(.["@include"])
+                    (if $mod != "" and (.["@include"] | test("/") | not) then
+                      ($partials[($mod + "/" + .["@include"])] // $partials[.["@include"]] // {})
+                    else
+                      ($partials[.["@include"]] // {})
+                    end) * del(.["@include"])
                   else
                     with_entries(.value |= resolve)
                   end
@@ -444,7 +495,19 @@ resolve_includes() {
         while [[ "$new_content" =~ \{\\\"@include\\\":[[:space:]]*\\\"([^\\\"]+)\\\"([^}]*)\} ]]; do
             local include_name="${BASH_REMATCH[1]}"
             local overrides_raw="${BASH_REMATCH[2]}"
-            local partial_file="${partials_dir}/${include_name}.json"
+            local partial_file
+
+            # Two-tier lookup: module-scoped first, then shared
+            if [[ "$include_name" != */* ]] && [[ -n "$CURRENT_MODULE" ]]; then
+                local module_partial="${partials_dir}/${CURRENT_MODULE}/${include_name}.json"
+                if [[ -f "$module_partial" ]]; then
+                    partial_file="$module_partial"
+                else
+                    partial_file="${partials_dir}/${include_name}.json"
+                fi
+            else
+                partial_file="${partials_dir}/${include_name}.json"
+            fi
 
             if [[ ! -f "$partial_file" ]]; then
                 log_error "Include partial not found: $include_name ($partial_file)"
@@ -497,14 +560,37 @@ resolve_includes() {
 # 列出模板
 list_templates() {
     log_info "Available templates:"
-    local template_files=("$TEMPLATES_DIR"/*.json)
-    if [[ -f "${template_files[0]}" ]]; then
-        for template_file in "${template_files[@]}"; do
-            if [[ -f "$template_file" ]]; then
-                basename "$template_file" .json
-            fi
-        done
-    else
+    local found=false
+
+    # Flat templates (no module)
+    for tf in "$TEMPLATES_DIR"/*.json; do
+        if [[ -f "$tf" ]]; then
+            echo "  $(basename "$tf" .json)"
+            found=true
+        fi
+    done
+
+    # Module templates
+    for dir in "$TEMPLATES_DIR"/*/; do
+        if [[ -d "$dir" ]]; then
+            local module_name
+            module_name=$(basename "$dir")
+            [[ "$module_name" == "partials" ]] && continue
+            local has_templates=false
+            for tf in "$dir"/*.json; do
+                if [[ -f "$tf" ]]; then
+                    if [[ "$has_templates" == "false" ]]; then
+                        echo "  [$module_name]"
+                        has_templates=true
+                    fi
+                    echo "    $module_name/$(basename "$tf" .json)"
+                    found=true
+                fi
+            done
+        fi
+    done
+
+    if [[ "$found" == "false" ]]; then
         log_warning "No templates found"
     fi
 }
@@ -512,18 +598,19 @@ list_templates() {
 # 显示模板变量
 show_template_variables() {
     local template_name="$1"
+    resolve_module "$template_name"
     local template_json
     template_json=$(load_template "$template_name") || return 1
     template_json=$(resolve_includes "$template_json") || return 1
 
     declare -A vars
     extract_template_variables "$template_json" vars
-    
-    if [[ ${#vars[@]} -eq 0 ]]; then
+
+    if [[ -z "${vars[*]}" ]]; then
         log_info "Template has no variables"
         return 0
     fi
-    
+
     log_info "Template variables:"
     for var in "${!vars[@]}"; do
         local current_value="${!var:-<not set>}"
@@ -606,6 +693,8 @@ make_request() {
     
     merge_variables cli_vars
 
+    resolve_module "$template_name"
+
     local template_json
     template_json=$(load_template "$template_name") || return 1
     template_json=$(resolve_includes "$template_json") || return 1
@@ -624,7 +713,7 @@ make_request() {
     fi
 
     template_json=$(replace_variables_recursive "$template_json")
-    
+
     if ! validate_variables "$template_json"; then
         log_error "Validation failed after variable replacement"
         return 1
@@ -695,6 +784,8 @@ dry_run() {
     
     merge_variables cli_vars
 
+    resolve_module "$template_name"
+
     local template_json
     template_json=$(load_template "$template_name") || return 1
     template_json=$(resolve_includes "$template_json") || return 1
@@ -749,19 +840,19 @@ Commands:
     init                              Initialize project structure
     
     send <template>           Execute API request from template
-                 [env]                (default: "default")
+                 [env]                (default: "default")   (supports module/name)
                  [output-file]        (optional: save response)
                  [VAR=value ...]      (optional: override variables)
-    
+
     dry-run <template>                Show request without executing
-                 [env]                (default: "default")
+                 [env]                (default: "default")   (supports module/name)
                  [VAR=value ...]      (optional: override variables)
     
     show-vars <template>              Show variables in template
     
     create-env <name>                 Create new environment file
-    create-template <name>            Create new JSON request template
-    create-xml-template <name>        Create new XML request template
+    create-template <name>            Create new JSON request template (supports module/name)
+    create-xml-template <name>        Create new XML request template (supports module/name)
 
     list-envs                         List available environments
     list-templates                    List available templates
@@ -777,27 +868,33 @@ Examples:
   2. Request with output file:
      ./$SCRIPT_NAME send get_users default output.json
 
-  3. Request with command-line variables:
+  3. Module template (template in subdirectory):
+     ./$SCRIPT_NAME send etcp/get_users
+
+  4. Request with command-line variables:
      ./$SCRIPT_NAME send create_issue default issue.json \\
        REPO_OWNER=myorg REPO_NAME=myrepo \\
        ISSUE_TITLE="New Feature" ISSUE_BODY="Description"
 
-  4. Override environment variables:
+  5. Override environment variables:
      ./$SCRIPT_NAME send search_repos prod result.json \\
        API_BASE_URL="https://api.github.com" \\
        AUTH_TOKEN="ghp_xxxxxxxxxxxx"
 
-  5. Show template variables:
+  6. Show template variables:
      ./$SCRIPT_NAME show-vars create_issue
 
-  6. Dry-run to see what would be sent:
+  7. Dry-run to see what would be sent:
      ./$SCRIPT_NAME dry-run create_issue default \\
        REPO_OWNER=myorg REPO_NAME=myrepo
 
-  7. Interactive mode (prompts for missing variables):
+  8. Create a module template:
+     ./$SCRIPT_NAME create-template etcp/get_users
+
+  9. Interactive mode (prompts for missing variables):
      ./$SCRIPT_NAME send create_issue
 
-  8. Non-interactive mode (fails if variables missing):
+ 10. Non-interactive mode (fails if variables missing):
      ./$SCRIPT_NAME send create_issue < /dev/null
 
 EOF
