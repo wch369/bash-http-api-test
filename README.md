@@ -13,7 +13,14 @@ chmod +x curlman
 ### 2. Configure Environment
 Edit `env/default.env` with your API credentials:
 ```bash
-API_BASE_URL="https://api.github.com"
+# Option A: Use API_HOST + API_PORT (recommended)
+API_HOST="api.github.com"
+API_PORT=""
+API_SCHEMA="https"
+
+# Option B: Full URL (backward-compatible)
+# API_BASE_URL="https://api.github.com"
+
 AUTH_TOKEN="ghp_your_token_here"
 ```
 
@@ -67,6 +74,7 @@ Override any variable directly from the command line without modifying files:
 ### 🔄 Environment Management
 - Multiple environments: dev, staging, production
 - Easy environment switching
+- Split URL: `API_HOST` + `API_PORT` + `API_SCHEMA` (override individually)
 - Variable override at runtime
 
 ```bash
@@ -397,9 +405,19 @@ Use `KEY=value` format:
 ### In Environment Files
 Use shell variable syntax:
 ```bash
-API_BASE_URL="https://api.github.com"
+# URL: prefer API_HOST + API_PORT; API_BASE_URL is fallback
+API_HOST="api.github.com"
+API_PORT=""           # optional, e.g. "8080"
+API_SCHEMA="https"
+API_BASE_URL=""       # full URL fallback (ignored when API_HOST is set)
 AUTH_TOKEN="ghp_xxxxxxxxxxxx"
 USERNAME="octocat"
+```
+
+API_HOST, API_PORT, and API_SCHEMA can be overridden from the command line or inside templates:
+```bash
+# Override host and port at runtime
+./curlman send get_users default API_HOST=10.0.0.1 API_PORT=9090
 ```
 
 ## Directory Structure

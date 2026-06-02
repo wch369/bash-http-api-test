@@ -1,5 +1,6 @@
 {
   "method": "POST",
+  "API_PORT": 12345,
   "endpoint": "/repos/${REPO_OWNER}/${REPO_NAME}/issues",
   "headers": {
     "Authorization": "${AUTH_TYPE} ${AUTH_TOKEN}",

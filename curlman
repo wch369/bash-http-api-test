@@ -40,6 +40,7 @@ CURRENT_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 TODAY=$(date '+%Y-%m-%d')
 SEQ="$(date '+%Y%m%d%H%M%S')$((RANDOM % 10000))"
 CURRENT_MODULE=""
+declare -A CLI_OVERRIDES
 
 # 检查依赖
 check_dependencies() {
@@ -142,8 +143,11 @@ create_env_template() {
     fi
 
     cat > "$env_file" << 'EOF'
-# API Configuration
-API_BASE_URL="https://api.example.com"
+# API Server (set API_HOST+API_PORT, or API_BASE_URL for full URL)
+API_HOST="api.example.com"
+API_PORT=""
+API_SCHEMA="https"
+API_BASE_URL=""
 API_VERSION="v1"
 TIMEOUT="30"
 
@@ -618,6 +622,37 @@ show_template_variables() {
     done
 }
 
+# Resolve a URL construction variable: CLI > template JSON > env > default
+resolve_url_var() {
+    local var_name="$1"
+    local template_json="$2"
+    local default="${3:-}"
+
+    # 1. CLI override (highest priority)
+    if [[ -n "${CLI_OVERRIDES[$var_name]:-}" ]]; then
+        echo "${CLI_OVERRIDES[$var_name]}"
+        return
+    fi
+
+    # 2. Template JSON key
+    local t_val
+    t_val=$(jq -r --arg k "$var_name" '.[$k] // empty' <<< "$template_json")
+    if [[ -n "$t_val" ]]; then
+        echo "$t_val"
+        return
+    fi
+
+    # 3. Environment variable
+    local env_val="${!var_name:-}"
+    if [[ -n "$env_val" ]]; then
+        echo "$env_val"
+        return
+    fi
+
+    # 4. Fallback default
+    echo "$default"
+}
+
 # 构建curl命令数组 - 通过全局变量CURL_CMD返回
 CURL_CMD=()
 
@@ -644,7 +679,23 @@ build_curl_request() {
         body="null"
     fi
 
-    local full_url="${API_BASE_URL}${endpoint}"
+    # Construct base URL: CLI > template JSON > env > fallback
+    local host
+    host=$(resolve_url_var "API_HOST" "$template_json" "")
+    local port
+    port=$(resolve_url_var "API_PORT" "$template_json" "")
+    local scheme
+    scheme=$(resolve_url_var "API_SCHEMA" "$template_json" "http")
+    local base_url
+    if [[ -n "$host" ]]; then
+        base_url="${scheme}://${host}"
+        [[ -n "$port" ]] && base_url="${base_url}:${port}"
+    else
+        local api_base_url
+        api_base_url=$(resolve_url_var "API_BASE_URL" "$template_json" "http://localhost")
+        base_url="$api_base_url"
+    fi
+    local full_url="${base_url}${endpoint}"
 
     # 添加查询参数
     if [[ $(jq 'length' <<< "$query_params") -gt 0 ]]; then
@@ -686,11 +737,17 @@ make_request() {
     declare -A cli_vars
     parse_cli_variables cli_vars "$@"
 
+    # Save CLI overrides for URL construction priority
+    CLI_OVERRIDES=()
+    for key in "${!cli_vars[@]}"; do
+        CLI_OVERRIDES["$key"]="${cli_vars[$key]}"
+    done
+
     if ! load_env "$env_name"; then
         log_error "Failed to load environment: $env_name"
         return 1
     fi
-    
+
     merge_variables cli_vars
 
     resolve_module "$template_name"
@@ -705,6 +762,10 @@ make_request() {
     if [[ -t 0 ]]; then
         prompt_for_variables required_vars cli_vars
         merge_variables cli_vars
+        # Re-save after interactive prompts
+        for key in "${!cli_vars[@]}"; do
+            CLI_OVERRIDES["$key"]="${cli_vars[$key]}"
+        done
     else
         if ! validate_variables "$template_json"; then
             log_error "Missing required variables. Use: $SCRIPT_NAME send <template> [env] [output-file] VAR=value VAR2=value2"
@@ -776,12 +837,18 @@ dry_run() {
     
     declare -A cli_vars
     parse_cli_variables cli_vars "$@"
-    
+
+    # Save CLI overrides for URL construction priority
+    CLI_OVERRIDES=()
+    for key in "${!cli_vars[@]}"; do
+        CLI_OVERRIDES["$key"]="${cli_vars[$key]}"
+    done
+
     if ! load_env "$env_name"; then
         log_error "Failed to load environment: $env_name"
         return 1
     fi
-    
+
     merge_variables cli_vars
 
     resolve_module "$template_name"
@@ -824,7 +891,7 @@ init_project() {
     
     log_success "Project initialized successfully"
     log_info "Next steps:"
-    log_info "1. Edit env/default.env with your API settings"
+    log_info "1. Edit env/default.env — set API_HOST/API_PORT or API_BASE_URL"
     log_info "2. Create request templates in templates/ directory"
     log_info "3. Run: ./$SCRIPT_NAME send <template-name> [env-name] [output-file] [VAR=value ...]"
 }
@@ -880,6 +947,10 @@ Examples:
      ./$SCRIPT_NAME send search_repos prod result.json \\
        API_BASE_URL="https://api.github.com" \\
        AUTH_TOKEN="ghp_xxxxxxxxxxxx"
+
+     # Override API host and port independently:
+     ./$SCRIPT_NAME send get_users default \\
+       API_HOST=10.0.0.1 API_PORT=9090
 
   6. Show template variables:
      ./$SCRIPT_NAME show-vars create_issue
