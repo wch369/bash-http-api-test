@@ -35,7 +35,7 @@ readonly NC='\033[0m'
 
 # 全局变量
 LOG_FILE="$LOGS_DIR/curlman.log"
-CURRENT_TIMESTAMP=$(date +%s)
+CURRENT_TIMESTAMP=$(date '+%m-%d-%H-%M-%S-%3N')
 CURRENT_DATE=$(date '+%Y-%m-%d %H:%M:%S')
 TODAY=$(date '+%Y-%m-%d')
 SEQ="$(date '+%Y%m%d%H%M%S')$((RANDOM % 10000))"
@@ -475,6 +475,18 @@ resolve_includes() {
         # jq递归处理JSON结构级别的 @include (supports module-scoped override keys)
         if echo "$new_content" | grep -q '"@include"'; then
             new_content=$(jq --arg mod "$CURRENT_MODULE" --argjson partials "$partials_json" '
+              def replace_vars($vars):
+                if type == "string" then
+                  reduce ($vars | to_entries[]) as $entry (.;
+                    gsub("\\$\\{" + $entry.key + "\\}"; $entry.value)
+                  )
+                elif type == "object" then
+                  with_entries(.value |= replace_vars($vars))
+                elif type == "array" then
+                  map(replace_vars($vars))
+                else
+                  .
+                end;
               def resolve:
                 if type == "object" then
                   if has("@include") then
@@ -482,7 +494,17 @@ resolve_includes() {
                       ($partials[($mod + "/" + .["@include"])] // $partials[.["@include"]] // {})
                     else
                       ($partials[.["@include"]] // {})
-                    end) * del(.["@include"])
+                    end) as $partial
+                    |
+                    del(.["@include"]) as $overrides
+                    |
+                    ([$partial | tostring | scan("\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}") | .[0]] | unique) as $partial_vars
+                    |
+                    ($overrides | with_entries(select(.key as $k | $partial_vars | index($k)))) as $var_overrides
+                    |
+                    ($overrides | with_entries(select(.key as $k | $partial_vars | index($k) | not))) as $merge_overrides
+                    |
+                    ($partial | replace_vars($var_overrides) | resolve) * $merge_overrides
                   else
                     with_entries(.value |= resolve)
                   end
@@ -521,19 +543,29 @@ resolve_includes() {
             local partial_content
             partial_content=$(cat "$partial_file")
 
-            # 如果有override，解析并替换XML元素内容
+            # 如果有override，解析并替换变量或XML元素内容
             if [[ -n "$overrides_raw" ]]; then
                 # 重建JSON对象，unescape \" -> "，用jq解析
                 local override_json
                 override_json="{\"@include\": \"${include_name}\"${overrides_raw}}"
                 override_json="${override_json//\\\"/\"}"
                 if override_json=$(jq -c 'del(.["@include"])' <<<"$override_json" 2>/dev/null); then
+                    # Extract ${VAR} patterns from partial
+                    local partial_vars
+                    partial_vars=$(echo "$partial_content" | grep -oP '\$\{[A-Za-z_][A-Za-z0-9_]*\}' | sed 's/[${}]//g' | sort -u)
+
                     while IFS= read -r key; do
                         local val
                         val=$(jq -r --arg k "$key" '.[$k]' <<<"$override_json")
-                        partial_content=$(sed -E \
-                            "s|<${key}>[^<]*</${key}>|<${key}>${val}</${key}>|g" \
-                            <<<"$partial_content")
+                        if echo "$partial_vars" | grep -qxF "$key"; then
+                            # Key matches ${KEY} in partial → do variable substitution
+                            partial_content="${partial_content//\$\{$key\}/$val}"
+                        else
+                            # Otherwise → XML element replacement
+                            partial_content=$(sed -E \
+                                "s|<${key}>[^<]*</${key}>|<${key}>${val}</${key}>|g" \
+                                <<<"$partial_content")
+                        fi
                     done < <(jq -r 'keys[]' <<<"$override_json")
                 fi
             fi
@@ -780,14 +812,20 @@ make_request() {
         return 1
     fi
 
-    build_curl_request "$template_json"
+    local response_file="$RESULTS_DIR/${template_name}_${CURRENT_TIMESTAMP}.json"
 
-    log_info "Executing request: $template_name"
+    log_info "Executing request: $template_name" 
     log_info "Environment: $env_name"
     log_info "URL: ${API_BASE_URL}"
+
+    build_curl_request "$template_json"
+
+    log_info "Generated curl command:"
+    printf '  %q ' "${CURL_CMD[@]}" | tee -a "$response_file"
+    echo
+    echo "$template_json" | jq '.' | tee -a "$response_file"
     log_info "Method: $(jq -r '.method // "GET"' <<< "$template_json")"
 
-    local response_file="$RESULTS_DIR/${template_name}_${CURRENT_TIMESTAMP}.json"
 
     # 直接执行数组，无需eval
     local response_and_code
@@ -797,21 +835,20 @@ make_request() {
     local http_code
     http_code=$(echo "$response_and_code" | tail -n1)
 
+    log_info "HTTP Status Code: $http_code" 
     # 保存响应到文件
-    echo "$response" > "$response_file"
-
-    log_info "HTTP Status Code: $http_code"
+    echo "$response" >> "$response_file"
 
     if [[ "${LOG_RESPONSES:-true}" == "true" ]]; then
         if [[ "${PRETTY_JSON:-true}" == "true" ]]; then
             log_info "Response (pretty-printed):"
             if command -v jq >/dev/null 2>&1 && echo "$response" | jq empty 2>/dev/null; then
-                echo "$response" | jq '.'
+                echo "$response" | jq '.' | tee -a "$response_file"
             else
-                echo "$response"
+                echo "$response" | tee -a "$response_file"
             fi
         else
-            log_info "Response: $response"
+            log_info "Response: $response" 
         fi
     fi
 

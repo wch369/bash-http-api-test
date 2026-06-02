@@ -46,3 +46,10 @@ echo -e "\n=== Example 9: Module template dry-run ==="
 
 echo -e "\n=== Example 10: List templates (shows module grouping) ==="
 ./curlman list-templates
+
+echo -e "\n=== Example 11: @include with variable-only override keys ==="
+echo "Keys matching \${KEY} in the partial (like SYS_ID) are consumed for"
+echo "variable substitution and NOT added to the request body."
+echo "See templates/host/etcp-host-062.json and templates/partials/host/host_sys_head.json"
+./curlman dry-run host/etcp-host-062 sit1 \
+  SYS_ID=3025 SND_DT=20270321 SND_TM=120000 SND_SEQ=0000001 acctNo=6227001234567890

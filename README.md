@@ -317,7 +317,19 @@ Reuse common template parts across multiple request templates. Place partial fil
 }
 ```
 
-Override specific fields from the partial inline:
+Override keys are processed in two ways depending on whether they match a `${KEY}` variable in the partial:
+
+**Variable keys** — keys that match a `${KEY}` pattern inside the partial are consumed for variable substitution only; they are **not** added to the request body:
+
+```json
+// Partial: templates/partials/host/host_sys_head.json
+{"cnsmrSysId": "${SYS_ID}", "glblSeqNo": "${SYS_ID}${SND_SEQ}"}
+
+// Template: SYS_ID feeds ${SYS_ID} but does not appear in the output
+{"sysHead": {"@include": "host_sys_head", "SYS_ID": "3025"}}
+```
+
+**Merge keys** — keys that do NOT match any `${KEY}` in the partial are deep-merged normally:
 
 ```json
 {

@@ -21,7 +21,8 @@ _api_test_commands() {
             if [[ "${words[1]}" == "$cmd" ]]; then
                 local templates_dir="$(dirname "${words[0]}")/templates"
                 if [[ -d "$templates_dir" ]]; then
-                    local templates=$(ls "$templates_dir"/*.json 2>/dev/null | xargs -n1 basename | sed 's/\.json$//')
+                    #local templates=$(ls "$templates_dir"/*.json 2>/dev/null | xargs -n1 basename | sed 's/\.json$//')
+                    local templates=$(find templates/ -name "*.json" | grep -v 'partials' | sed -r 's%templates/|.json%%g')
                     COMPREPLY=($(compgen -W "$templates" -- "$cur"))
                 fi
                 return
